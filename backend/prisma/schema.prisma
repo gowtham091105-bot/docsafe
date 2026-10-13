@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id              String            @id @default(uuid()) @db.Uuid
+  name            String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  users           User[]
+  categories      Category[]
+  documents       Document[]
+  complianceItems ComplianceItem[]
+  renewals        RenewalRecord[]
+  events          DocumentEvent[]
+  fileAssets      FileAsset[]
+
+  @@map("docsafe_tenants")
+}
+
+model User {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid @map("tenant_id")
+  email           String            @unique
+  passwordHash    String            @map("password_hash")
+  firstName       String            @map("first_name")
+  lastName        String            @map("last_name")
+  role            Role
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  ownedDocuments  Document[]        @relation("DocumentOwner")
+  uploadedDocuments Document[]      @relation("DocumentUploader")
+  uploadedFiles   FileAsset[]
+
+  @@map("docsafe_users")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  COMPLIANCE_MANAGER
+  UPLOADER
+  REVIEWER
+  VIEWER
+}
+
+model Category {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid @map("tenant_id")
+  name            String
+  description     String?
+  isActive        Boolean           @default(true) @map("is_active")
+  createdBy       String            @db.Uuid @map("created_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  documents       Document[]
+  complianceItems ComplianceItem[]
+
+  @@unique([tenantId, name])
+  @@map("docsafe_categories")
+}
+
+model Document {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid @map("tenant_id")
+  categoryId      String            @db.Uuid @map("category_id")
+  title           String
+  description     String?
+  fileAssetId     String?           @db.Uuid @map("file_asset_id")
+  ownerUserId     String?           @db.Uuid @map("owner_user_id")
+  issueDate       DateTime          @db.Date @map("issue_date")
+  expiryDate      DateTime          @db.Date @map("expiry_date")
+  renewalDueDate  DateTime?         @db.Date @map("renewal_due_date")
+  status          DocumentStatus
+  visibilityScope String?           @map("visibility_scope")
+  uploadedBy      String            @db.Uuid @map("uploaded_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  category        Category          @relation(fields: [categoryId], references: [id])
+  owner           User?             @relation("DocumentOwner", fields: [ownerUserId], references: [id])
+  uploader        User              @relation("DocumentUploader", fields: [uploadedBy], references: [id])
+  fileAsset       FileAsset?        @relation(fields: [fileAssetId], references: [id])
+  complianceItems ComplianceItem[]
+  renewals        RenewalRecord[]
+  events          DocumentEvent[]
+
+  @@map("docsafe_documents")
+}
+
+enum DocumentStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  RENEWAL_IN_PROGRESS
+  ARCHIVED
+  MISSING
+}
+
+model FileAsset {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid @map("tenant_id")
+  originalFilename String            @map("original_filename")
+  storageKey       String            @map("storage_key")
+  mimeType         String            @map("mime_type")
+  sizeBytes        Int               @map("size_bytes")
+  checksum         String?
+  uploadedBy       String            @db.Uuid @map("uploaded_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  uploader         User              @relation(fields: [uploadedBy], references: [id])
+  documents        Document[]
+
+  @@map("core_file_assets")
+}
+
+model ComplianceItem {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid @map("tenant_id")
+  name             String
+  categoryId       String?           @db.Uuid @map("category_id")
+  linkedDocumentId String?           @db.Uuid @map("linked_document_id")
+  dueDate          DateTime?         @db.Date @map("due_date")
+  severity         ComplianceSeverity
+  status           ComplianceStatus
+  notes            String?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  category         Category?         @relation(fields: [categoryId], references: [id])
+  document         Document?         @relation(fields: [linkedDocumentId], references: [id])
+
+  @@map("docsafe_compliance_items")
+}
+
+enum ComplianceSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  PENDING
+  MISSING
+  EXPIRED
+  UNDER_REVIEW
+}
+
+model RenewalRecord {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid @map("tenant_id")
+  documentId       String            @db.Uuid @map("document_id")
+  initiatedBy      String            @db.Uuid @map("initiated_by")
+  initiatedAt      DateTime          @default(now()) @map("initiated_at")
+  stage            String
+  remarks          String?
+  completedAt      DateTime?         @map("completed_at")
+  status           RenewalStatus
+  
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  document         Document          @relation(fields: [documentId], references: [id])
+
+  @@map("docsafe_renewal_records")
+}
+
+enum RenewalStatus {
+  NOT_STARTED
+  INITIATED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+model DocumentEvent {
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @db.Uuid @map("tenant_id")
+  documentId       String            @db.Uuid @map("document_id")
+  eventType        String            @map("event_type")
+  payloadJson      String?           @map("payload_json")
+  triggeredBy      String?           @db.Uuid @map("triggered_by")
+  triggeredAt      DateTime          @default(now()) @map("triggered_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  document         Document          @relation(fields: [documentId], references: [id])
+
+  @@map("docsafe_document_events")
+}
